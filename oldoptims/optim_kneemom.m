@@ -21,17 +21,12 @@ function [result] = optim(prob);
 	% Some model related constants
 	ndof = 9;
 	nmus = 16;
-	nstates = 2*ndof + 2*nmus + 4;
+	nstates = 2*ndof + 2*nmus + 5;          %4 aka knee states and knee moment
 	ncontrols = nmus + 2;
 	nvarpernode = nstates + ncontrols;		% number of unknowns per time node
 	nvar = nvarpernode * N + 1;				% total number of unknowns (states, controls, duration)
 	ncon = nstates * N;						% number of constraints due to discretized dynamics and task
-    if problem.model.kneeconstraint == 1
-        ncon = ncon + N;
-    end
-    if problem.model.hipconstraint == 1
-        ncon = ncon+N;
-    end
+    nconuneq = N;                           % inequality constraints due to knee moment limit
 
 	problem.ndof = ndof;
 	problem.nmus = nmus;
@@ -40,6 +35,7 @@ function [result] = optim(prob);
 	problem.nvarpernode = nvarpernode;
 	problem.nvar = nvar;
 	problem.ncon = ncon;
+    problem.nconenuq = nconuneq;
 	
 	% precompute the indices for muscle controls
 	iu = [];
@@ -94,13 +90,20 @@ function [result] = optim(prob);
 	% bounds for prosthesis states
 	Lxp = [-100 ; -100; -100; -500];			% s, v1, v2, M
 	Uxp = [100 ; 100; 100; 500];
+    % bounds for maximum knee moment
+    Lxm = problem.model.kneemomconstraint;%35;
+    Uxm = inf;
 	% bounds for prosthesis controls
 	Lup = zeros(2,1)+0.001;
 	Uup = ones(2,1);
 	for k = 0:N-1
-		L(k*nvarpernode + (1:nvarpernode) ) = [Lx; Lxp; Lu; Lup];
-		U(k*nvarpernode + (1:nvarpernode) ) = [Ux; Uxp; Uu; Uup];
-	end
+		L(k*nvarpernode + (1:nvarpernode) ) = [Lx; Lxp; Lxm; Lu; Lup]; % Check if Lm should be 0 for all except last node
+        U(k*nvarpernode + (1:nvarpernode) ) = [Ux; Uxp; Uxm; Uu; Uup];
+    end
+    % Constraint on knee moment
+%     L((N-1)*nvarpernode + (1:nvarpernode) ) = [Lx; Lxp; Lu; Lup; Lxm]; % Check if Lm should be 0 for all except last node
+%     U((N-1)*nvarpernode + (1:nvarpernode) ) = [Ux; Uxp; Uu; Uup; Uxm];
+    
 	L(end) = 0.2;		% minimum duration of movement cycle
 	U(end) = 2.0;		% maximum duration of movement cycle
 	% constrain X of trunk at first node to be zero (since it does not matter, and this helps convergence)
@@ -132,8 +135,16 @@ function [result] = optim(prob);
 		load(problem.initialguess);
 		Nresult = size(result.x,2);
 		t0 = (0:(Nresult-1))'/Nresult;
+        
 		x0 = result.x';
+        M0s = [];
+        for i = 1:N
+            M0 = jointmoments(x0(i,:)', problem.model);
+            M0s = [M0s;M0]; 
+        end
 		u0 = result.u';
+        
+        M0 = ones(N,1)*max(M0s);
 		
 		% initial guess for valve controls is random (to avoid getting stuck in local optimum)
 		% u0(:,17:18) = rand(size(u0(:,17:18)));
@@ -149,7 +160,7 @@ function [result] = optim(prob);
 		times = (0:(N-1))/N;
 		x0 = interp1(t0,x0,times,'linear','extrap');
 		u0 = interp1(t0,u0,times,'linear','extrap');
-		X0 = reshape([x0 u0]',nvar-1,1);
+		X0 = reshape([x0 M0 u0]',nvar-1,1);
 		X0 = [X0 ; result.dur];
 	end
 	problem.X0 = X0;			% store initial guess in case we need it later
@@ -159,6 +170,15 @@ function [result] = optim(prob);
 	for i=1:1
 		problem.Jnnz = 1;
 		X = L + (U-L).*rand(size(L));		% a random vector of unknowns
+        Moms = [];
+        for i = 1:N
+            Mm = jointmoments(x0(i,:)', problem.model);
+            Moms = [Moms;Mm]; 
+        end       
+        hh = isnan(X);
+        ints = find(hh == 1);
+        X(ints) = max(Moms);
+		
 		J = conjac_2d(X);
 		problem.Jnnz = nnz(J);
 		fprintf('Jacobian sparsity: %d nonzero elements out of %d (%5.3f%%).\n',problem.Jnnz, ncon*nvar, 100*problem.Jnnz/(ncon*nvar));
@@ -170,30 +190,30 @@ function [result] = optim(prob);
 	if problem.checkderivatives
 		% check the model derivatives
 		hh = 1e-7;
-		x = randn(nstates,1);
-		xdot = randn(nstates,1);
+		x = randn(nstates-1,1);
+		xdot = randn(nstates-1,1);
 		u = randn(ncontrols,1);
-		[f, dfdx, dfdxdot, dfdu] = dyn(problem.model, x, xdot, u);
+		[f, dfdx, dfdxdot, dfdu] = dyn_kneemom(problem.model, x, xdot, u);
 		dfdx_num = zeros(size(dfdx));
 		dfdxdot_num = zeros(size(dfdxdot));
 		dfdu_num = zeros(size(dfdu));
-		for i=1:nstates
+		for i=1:nstates-1
 			tmp = x(i);
 			x(i) = x(i) + hh;
-			fhh = dyn(problem.model, x, xdot, u);
+			fhh = dyn_kneemom(problem.model, x, xdot, u);
 			dfdx_num(:,i) = (fhh-f)/hh;
 			x(i) = tmp;
 			
 			tmp = xdot(i);
 			xdot(i) = xdot(i) + hh;
-			fhh = dyn(problem.model, x, xdot, u);
+			fhh = dyn_kneemom(problem.model, x, xdot, u);
 			dfdxdot_num(:,i) = (fhh-f)/hh;
 			xdot(i) = tmp;
 		end
 		for i=1:ncontrols
 			tmp = u(i);
 			u(i) = u(i) + hh;
-			fhh = dyn(problem.model, x, xdot, u);
+			fhh = dyn_kneemom(problem.model, x, xdot, u);
 			dfdu_num(:,i) = (fhh-f)/hh;
 			u(i) = tmp;
 		end
@@ -213,7 +233,7 @@ function [result] = optim(prob);
 		grad = objgrad_2d(X);
 		c = confun_2d(X);
 		cjac = conjac_2d(X);
-		cjac_num = zeros(ncon,nvar);
+		cjac_num = zeros(ncon+nconuneq,nvar);
 		grad_num = zeros(nvar,1);
 		for i=1:nvar
 			fprintf('checking objgrad and conjac for unknown %4d of %4d\n',i,nvar);
@@ -263,8 +283,12 @@ function [result] = optim(prob);
 			funcs.jacobianstructure = @conjacstructure_2d;
 			options.lb = L;
 			options.ub = U;
-			options.cl = [zeros(ncon,1)];
-			options.cu = [zeros(ncon,1)];
+			options.cl = zeros(ncon,1);
+            options.cu = [];
+            for i = 1:N
+                options.cu = [options.cu;zeros(nstates-1,1);inf];
+            end
+% 			options.cu = [zeros(ncon,1);inf*ones(nconuneq,1)];	
 			options.ipopt.max_iter = problem.MaxIterations;
 			options.ipopt.hessian_approximation = 'limited-memory';
 			options.ipopt.limited_memory_max_history = 12;	% 6 is default, 12 converges better, but may cause "insufficient memory" error when N is large
@@ -296,12 +320,7 @@ function [result] = optim(prob);
 %             end
             FL = [-inf;zeros(problem.ncon,1)];
             FU = [inf;zeros(problem.ncon,1)];
-            xmul = zeros(size(L));
-            Fmul = zeros(size(FL));
-            xstate = 2*ones(size(X0));
-            Fstate = 2*ones(size(FL));
-            [X,F,INFO] = snopt(X0,L,U,xmul, xstate,FL,FU,Fmul, Fstate, 'objconfun');
-%             [X,F,INFO] = snopt(X0,L,U,FL,FU, 'objconfun');
+            [X,F,INFO] = snopt(X0,L,U,FL,FU, 'objconfun');
             snprint    off;
             snsummary off;
             result.info = INFO;
@@ -313,25 +332,6 @@ function [result] = optim(prob);
             else
                 result.message = 'Check INFO'
             end
-        elseif strcmp(problem.Solver,'TOMLAB')
-            Prob = conAssign(@objfun_2d, @objgrad_2d, [], [], L, U, 'optim2d', X0, ...
-                            [], 0, ...
-                            [], [], [], @confun_2d, @conjac_2d, [], problem.Jpattern, ...
-							zeros(ncon,1), zeros(ncon,1), ...
-                            [], [], [],[]);
-			% Prob.SOL.optPar(1)= 1;			% uncomment this to get snoptsum.txt and snoptpri.txt
-			Prob.SOL.optPar(9) = problem.ConstraintTol;		% feasibility tolerance
-			Prob.SOL.optPar(10) = problem.Tol;				% optimality tolerance
-			Prob.SOL.optPar(11) = 1e-6; % Minor feasibility tolerance (1e-6)
-			Prob.SOL.optPar(30) = 1000000; % maximal sum of minor iterations (max(10000,20*m))
-			Prob.SOL.optPar(35) = problem.MaxIterations;
-			Prob.SOL.optPar(36) = 40000; % maximal number of minor iterations in the solution of the QP problem (500)
-			Prob.SOL.moremem = 10000000; % increase internal memory
-%             Prob.PriLevOpt = 2; % Print every 10 major iterations
-			Result = tomRun('snopt',Prob);
-			X = Result.x_k;
-			result.message = Result.ExitText;
-			result.info = Result.ExitFlag;              
 		else
 			error('Solver name not recognized: %s', problem.Solver);
 		end
@@ -366,10 +366,10 @@ function model = initialize(model);
 	model.nnz_dfdx = 1;
 	model.nnz_dfdxdot = 1;
 	model.nnz_dfdu = 1;
-	x 		= randn(problem.nstates,1);
-	xdot 	= randn(problem.nstates,1);
+	x 		= randn(problem.nstates-1,1);
+	xdot 	= randn(problem.nstates-1,1);
 	u 		= randn(problem.ncontrols,1);
-	[f,dfdx,dfdxdot,dfdu] = dyn(model,x,xdot,u);
+	[f,dfdx,dfdxdot,dfdu] = dyn_kneemom(model,x,xdot,u);
 	model.nnz_dfdx 		= nnz(dfdx);
 	model.nnz_dfdxdot 	= nnz(dfdxdot);
 	model.nnz_dfdu 		= nnz(dfdu);
@@ -495,7 +495,12 @@ function [f, g, c, J] = evaluate(model, X)
 		g(ixg(4:6)) = g(ixg(4:6)) + 2*res(1:3)'/(11*N);		% gradient of objective with respect to right side angles
 		g(ixg(7:9)) = g(ixg(7:9)) + 2*res(6:8)'/(11*N);		% gradient of objective with respect to left side angles
 		g(ixg) = g(ixg) + 2*dGRFdx'*res([4 5 9 10])'/(11*N);	% gradient of GRF terms in objective, with respect to all state variables
-		ixg = ixg + nvarpernode;								% move pointers to next node
+		        
+        % Minimize M_max
+        f1 = f1+1/N*X(ixg(end)+5);%^2; %always positive due to lower bound
+        g(ixg(end)+1) = 1/N;% 2/N*X(ixg(end)+5);
+        
+        ixg = ixg + nvarpernode;								% move pointers to next node
 	end
 	
 	% add tracking error for movement duration
@@ -559,44 +564,19 @@ function [f, g, c, J] = evaluate(model, X)
 	J = spalloc(ncon, nvar, problem.Jnnz);
 
 	% pointers to states and controls in node 1
-	ix1 = 1:nstates;
+	ix1 = 1:nstates-1;
+    ixM = nstates;
 	iu1 = nstates+(1:ncontrols);
 	% pointers to constraints for node 1
-	ic = 1:nstates;
-    
-    if model.kneeconstraint == 1
-        ixu1 = 1:nstates;
-        Mk = zeros(N,2);
-        dMdxk = [];
-        for i = 1:N
-            xu = X(ixu1);
-            % Constraint on knee moments
-            [Mk(i,:),dMdxki] = jointmoments_knee(xu, model);
-            dMdxk = [dMdxk;dMdxki];
-            ixu1 = ixu1 + nvarpernode;
-        end
-    end
-    
-    if model.hipconstraint == 1
-        ixu1 = 1:nstates;
-        Mh = zeros(N,2);
-        dMdxh = [];
-        for i = 1:N
-            xu = X(ixu1);
-            % Constraint on hip moments
-            [Mh(i,:),dMdxhi] = jointmoments_hip(xu, model);
-            dMdxh = [dMdxh;dMdxhi];
-            ixu1 = ixu1 + nvarpernode;
-        end
-    end
-
+	ic = 1:nstates-1;
+    icM = nstates; %Moment constraint
 	% evaluate dynamics at each pair of successive nodes
 	for i=1:N
 		if (i < N)
 			ix2 = ix1 + nvarpernode;
 			iu2 = iu1 + nvarpernode;
 		else
-			ix2 = 1:nstates;							% use node 1
+			ix2 = 1:nstates-1;							% use node 1
 			iu2 = nstates+(1:ncontrols);				% use node 1
 		end
 		x1 = X(ix1);
@@ -606,17 +586,16 @@ function [f, g, c, J] = evaluate(model, X)
 		end
 		u1 = X(iu1);
 		u2 = X(iu2);
-        
-        	
+		
 		% evaluate dynamics violation, and derivatives
 		if (discr==1)						% midpoint
-			[c(ic), dfdx, dfdxdot, dfdu] = dyn(model,(x1+x2)/2,(x2-x1)/h,(u1+u2)/2);	%easydyn((x1+x2)/2,(x2-x1)/h);%
+			[c(ic), dfdx, dfdxdot, dfdu] = dyn_kneemom(model,(x1+x2)/2,(x2-x1)/h,(u1+u2)/2, Mis);	%easydyn_kneemom((x1+x2)/2,(x2-x1)/h);%
 			J(ic,ix1) = dfdx/2 - dfdxdot/h;
 			J(ic,ix2) = dfdx/2 + dfdxdot/h;
 			J(ic,iu1) = dfdu/2;
 			J(ic,iu2) = dfdu/2;
 		else								% euler
-			[c(ic), dfdx, dfdxdot, dfdu] = dyn(model,x2,(x2-x1)/h,u2);	%easydyn(x2,(x2-x1)/h);%
+            [c(ic), dfdx, dfdxdot, dfdu] = dyn_kneemom(model,x2,(x2-x1)/h,u2);	%easydyn_kneemom(x2,(x2-x1)/h);%
 			J(ic,ix1) = -dfdxdot/h;
 			J(ic,ix2) = dfdx + dfdxdot/h;
 			J(ic,iu2) = dfdu;
@@ -633,44 +612,19 @@ function [f, g, c, J] = evaluate(model, X)
 			J(ic,end) = J(ic,end) + dfdxdot(:,1) / h * speed;
         end
 				
-        % Moment constraint: knee and/or hip moment should be equal to the
-        % joint moment in the other leg with N/2 phase difference
-        if model.kneeconstraint == 1;
-            if i <= N/2
-                c(end-2*N+i) = Mk(i,1)-Mk(i+N/2,2);
-                J(end-2*N+i,ix1) = -dMdxk(2*i-1,:);
-                J(end-2*N+i,ix1+N/2*nvarpernode) = dMdxk(2*(i+N/2),:);
-            else
-                c(end-2*N+i) = Mk(i,1)-Mk(i-N/2,2);
-                J(end-2*N+i,ix1) = -dMdxk(2*i-1,:);
-                J(end-2*N+i,ix1-N/2*nvarpernode) = dMdxk(2*(i-N/2),:);
-            end
-        end
-        if or(model.kneeconstraint < 0, model.kneeconstraint > 1)
-            error('Invalid knee constraint')
-        end
+        [Mi,J(icM,ix1)] = jointmoments(x1, model);
         
-        if model.hipconstraint == 1;
-            if i <= N/2
-                c(end-N+i) = Mh(i,1)-Mh(i+N/2,2);
-                J(end-N+i,ix1) = -dMdxh(2*i-1,:);
-                J(end-N+i,ix1+N/2*nvarpernode) = dMdxh(2*(i+N/2),:);
-            else
-                c(end-N+i) = Mh(i,1)-Mh(i-N/2,2);
-                J(end-N+i,ix1) = -dMdxh(2*i-1,:);
-                J(end-N+i,ix1-N/2*nvarpernode) = dMdxh(2*(i-N/2),:);
-            end
-        end
-        if or(model.hipconstraint < 0, model.hipconstraint > 1)
-            error('Invalid hip constraint')
-        end
+        c(icM) = X(ixM)-Mi;
+        J(icM,ixM) = 1;
         
 		% advance the indices
+        ixM = ixM + nvarpernode;
 		ix1 = ix1 + nvarpernode;
 		iu1 = iu1 + nvarpernode;
-		ic = ic + nstates;		% there are nstates constraints for each node
-    end    
-    
+		ic = ic + nstates;		% there are nstates constraints for each node        
+        icM = icM + nstates;
+    end
+
 	c = problem.Wc * c;
 	J = problem.Wc * J;
 	
@@ -693,7 +647,12 @@ function evaluate_if_needed(X)
 		optim.X = X;
 
 		% log the results of this evaluation
-		normc = norm(optim.c(1:end-2*problem.N));
+        % normc: do not use the inequality constraints
+        cuse = [];
+        for i = 1:problem.N
+            cuse = [cuse;optim.c((i-1)*problem.nstates+(1:problem.nstates-1))];
+        end
+		normc = norm(cuse);
 		row = [normc optim.f];
 		row(find(row==0)) = NaN;
 		problem.log = [problem.log ; row];
@@ -702,10 +661,11 @@ function evaluate_if_needed(X)
 		if problem.print == 0
 			return
 		end
-		if or(problem.print == 2,toc > problem.Printinterval)
+		if problem.print == 2 || toc > problem.Printinterval
 			report(X);
 			fprintf('%d -- Normc: %8.6f  ', size(problem.log,1), normc);
 			fprintf('Obj: %8.5f = %8.5f (track) + %8.5f (effort) + %8.5f (valves)\n', optim.f);
+%             disp(X([55,4362]))
 			savefile(X, 'tmpsave.mat');
 			tic;
 		end
@@ -777,7 +737,7 @@ function savefile(X, filename, result_input)
 	result.speed = problem.model.data.speed;
 	result.model = problem.model;
 	result.normc = problem.log(end,1);
-	result.f = problem.log(end,2:5);
+	result.f = problem.log(end,2);
 	save(filename,'result');
 end
 %===========================================================================================

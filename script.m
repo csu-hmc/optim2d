@@ -1,5 +1,7 @@
 % script for running the optim.m program
 clear all
+clear global
+clear mex
 
 % define which movement we are working on
 movement = 'Winter/Winter_normal';
@@ -9,8 +11,8 @@ problem.Solver = 'IPOPT';
 problem.checkderivatives = 0;
 problem.debug = 0;
 problem.MaxIterations = 5000;
-problem.ConstraintTol = .001;
-problem.Tol = .0001;
+problem.ConstraintTol = .0001;
+problem.Tol = .00001;
 problem.Printinterval = 3.0;
 problem.N = 60;					% number of collocation nodes in the movement cycle
 

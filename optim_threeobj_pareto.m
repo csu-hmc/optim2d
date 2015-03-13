@@ -1,4 +1,4 @@
-function [result] = optim(prob);
+function [result] = optim_threeobj_pareto(prob)
 
 % predictive optimization
 
@@ -26,12 +26,6 @@ function [result] = optim(prob);
 	nvarpernode = nstates + ncontrols;		% number of unknowns per time node
 	nvar = nvarpernode * N + 1;				% total number of unknowns (states, controls, duration)
 	ncon = nstates * N;						% number of constraints due to discretized dynamics and task
-    if problem.model.kneeconstraint == 1
-        ncon = ncon + N;
-    end
-    if problem.model.hipconstraint == 1
-        ncon = ncon+N;
-    end
 
 	problem.ndof = ndof;
 	problem.nmus = nmus;
@@ -73,18 +67,10 @@ function [result] = optim(prob);
 	Lu = zeros(nmus,1);
 	Uu = 2*ones(nmus,1);
 	% bounds for musculoskeletal states
-     % Lowerbound: AFO is fixed
-%      if strcmp(problem.model.type, 'AFO')
-%         Lx = [-1; 0.8; -pi/4; -pi; -pi; 0; -pi; -pi; -pi; 		... % q
-% 			-5; -5;  -20; -20; -20; -20; -20; -20; -20;  	... % qdot
-% 			zeros(16,1)-1;									...	% Lce
-% 			Lu]; 											... % active states
-%      else
-        Lx = [-1; 0.5; -pi/4; -pi; -pi; -pi; -pi; -pi; -pi; 		... % q
-			-5; -5;  -20; -20; -20; -20; -20; -20; -20;  	... % qdot
-			zeros(16,1)-1;									...	% Lce
-			Lu]; 											...	% active states
-%      end
+    Lx = [-1; 0.5; -pi/4; -pi; -pi; -pi; -pi; -pi; -pi; 		... % q
+        -5; -5;  -20; -20; -20; -20; -20; -20; -20;  	... % qdot
+        zeros(16,1)-1;									...	% Lce
+        Lu]; 											...	% active states
  
     Ux = [4; 1.5; pi/4; pi; pi; pi; pi; pi; pi; 				... % q
         5; 5; 20; 20; 20; 20; 20; 20; 20;  			... % qdot
@@ -263,8 +249,8 @@ function [result] = optim(prob);
 			funcs.jacobianstructure = @conjacstructure_2d;
 			options.lb = L;
 			options.ub = U;
-			options.cl = [zeros(ncon,1)];
-			options.cu = [zeros(ncon,1)];
+			options.cl = zeros(ncon,1);
+			options.cu = zeros(ncon,1);	
 			options.ipopt.max_iter = problem.MaxIterations;
 			options.ipopt.hessian_approximation = 'limited-memory';
 			options.ipopt.limited_memory_max_history = 12;	% 6 is default, 12 converges better, but may cause "insufficient memory" error when N is large
@@ -296,12 +282,7 @@ function [result] = optim(prob);
 %             end
             FL = [-inf;zeros(problem.ncon,1)];
             FU = [inf;zeros(problem.ncon,1)];
-            xmul = zeros(size(L));
-            Fmul = zeros(size(FL));
-            xstate = 2*ones(size(X0));
-            Fstate = 2*ones(size(FL));
-            [X,F,INFO] = snopt(X0,L,U,xmul, xstate,FL,FU,Fmul, Fstate, 'objconfun');
-%             [X,F,INFO] = snopt(X0,L,U,FL,FU, 'objconfun');
+            [X,F,INFO] = snopt(X0,L,U,FL,FU, 'objconfun');
             snprint    off;
             snsummary off;
             result.info = INFO;
@@ -311,27 +292,8 @@ function [result] = optim(prob);
             if result.info == 1
                 result.message = 'Optimization Solved';
             else
-                result.message = 'Check INFO'
+                result.message = 'Check INFO';
             end
-        elseif strcmp(problem.Solver,'TOMLAB')
-            Prob = conAssign(@objfun_2d, @objgrad_2d, [], [], L, U, 'optim2d', X0, ...
-                            [], 0, ...
-                            [], [], [], @confun_2d, @conjac_2d, [], problem.Jpattern, ...
-							zeros(ncon,1), zeros(ncon,1), ...
-                            [], [], [],[]);
-			% Prob.SOL.optPar(1)= 1;			% uncomment this to get snoptsum.txt and snoptpri.txt
-			Prob.SOL.optPar(9) = problem.ConstraintTol;		% feasibility tolerance
-			Prob.SOL.optPar(10) = problem.Tol;				% optimality tolerance
-			Prob.SOL.optPar(11) = 1e-6; % Minor feasibility tolerance (1e-6)
-			Prob.SOL.optPar(30) = 1000000; % maximal sum of minor iterations (max(10000,20*m))
-			Prob.SOL.optPar(35) = problem.MaxIterations;
-			Prob.SOL.optPar(36) = 40000; % maximal number of minor iterations in the solution of the QP problem (500)
-			Prob.SOL.moremem = 10000000; % increase internal memory
-%             Prob.PriLevOpt = 2; % Print every 10 major iterations
-			Result = tomRun('snopt',Prob);
-			X = Result.x_k;
-			result.message = Result.ExitText;
-			result.info = Result.ExitFlag;              
 		else
 			error('Solver name not recognized: %s', problem.Solver);
 		end
@@ -354,7 +316,7 @@ function [result] = optim(prob);
 	
 end						% end of function "optim"
 %===========================================================================================
-function model = initialize(model);
+function model = initialize(model)
 	global problem
 
 	% Initialize the musculoskeletal model
@@ -369,7 +331,7 @@ function model = initialize(model);
 	x 		= randn(problem.nstates,1);
 	xdot 	= randn(problem.nstates,1);
 	u 		= randn(problem.ncontrols,1);
-	[f,dfdx,dfdxdot,dfdu] = dyn(model,x,xdot,u);
+	[~,dfdx,dfdxdot,dfdu] = dyn(model,x,xdot,u);
 	model.nnz_dfdx 		= nnz(dfdx);
 	model.nnz_dfdxdot 	= nnz(dfdxdot);
 	model.nnz_dfdu 		= nnz(dfdu);
@@ -429,14 +391,14 @@ function model = initialize(model);
 	% store average and SD in N x 10 matrix
 	av = [av(1:N,:) av([N/2+1:N 1:N/2],:)];		% right side data in columns 1-5, left side in columns 6-10, phase shifted	
 	sd = [sd(1:N,:) sd([N/2+1:N 1:N/2],:)];		% right side data in columns 1-5, left side in columns 6-10, phase shifted	
-	
+    
 	% store everything in the data struct within model
 	model.data.av = av;
 	model.data.sd = sd;
 	model.data.dur = gait.dur(1);
 	model.data.dursd = gait.dur(2);
 	model.data.speed = gait.speed(1);
-	
+    
 	% the 'zero' model can't move, so we set prescribed speed to zero
 	if strcmp(model.type, 'zero')
 		model.data.speed = 0.0;
@@ -478,8 +440,14 @@ function [f, g, c, J] = evaluate(model, X)
 
 	%--------------------------------------------------------------
 	% Objective function f and its gradient g
-	g = zeros(size(X));
+	g1 = zeros(size(X));
+    g2 = zeros(size(X));
+    g3 = zeros(size(X));
+    g4 = zeros(size(X));
 
+    % s: the order of the term for the pareto-stuff
+    s = model.s;
+    
 	% tracking term for kinematics and GRF
 	ixg = 1:nxg;				% index to musculoskeletal states in node 1
 	f1 = 0;
@@ -492,28 +460,32 @@ function [f, g, c, J] = evaluate(model, X)
 		res = (simdata-av(i,:))./sd(i,:);		% the ten residuals, normalized to SD
 		f1 = f1 + sum(res.^2)/(11*N);
 		res = res./sd(i,:);						% divide again by SD, needed for gradient
-		g(ixg(4:6)) = g(ixg(4:6)) + 2*res(1:3)'/(11*N);		% gradient of objective with respect to right side angles
-		g(ixg(7:9)) = g(ixg(7:9)) + 2*res(6:8)'/(11*N);		% gradient of objective with respect to left side angles
-		g(ixg) = g(ixg) + 2*dGRFdx'*res([4 5 9 10])'/(11*N);	% gradient of GRF terms in objective, with respect to all state variables
+		g1(ixg(4:6)) = g1(ixg(4:6)) + 2*res(1:3)'/(11*N);		% gradient of objective with respect to right side angles
+		g1(ixg(7:9)) = g1(ixg(7:9)) + 2*res(6:8)'/(11*N);		% gradient of objective with respect to left side angles
+		g1(ixg) = g1(ixg) + 2*dGRFdx'*res([4 5 9 10])'/(11*N);	% gradient of GRF terms in objective, with respect to all state variables
 		ixg = ixg + nvarpernode;								% move pointers to next node
 	end
 	
 	% add tracking error for movement duration
 	f1 = f1 + ((X(end) - dur)/dursd)^2/11;				
-	g(end) = g(end) + 2*(X(end) - dur)/dursd^2/11;		
-	
+	g1(end) = g1(end) + 2*(X(end) - dur)/dursd^2/11;
+    
+	% apply s
+    f1 = f1^s;
+    g1 = s*f1^(s-1)*g1;
+    
 	% apply weighting to the tracking term
 	f1 = f1*model.Wtrack;
-	g = g*model.Wtrack;
+	g1 = g1*model.Wtrack;
 	
 	% effort term for muscles
 	f2 = 0;
 	expon = abs(model.effort.exponent);
 	for i=1:nmus
 		if model.effort.Fmaxweighted
-			W = model.Weffort * model.Fmax(i) / nmus / sum(model.Fmax);
+			W = model.Fmax(i) / nmus / sum(model.Fmax);
 		else
-			W = model.Weffort / nmus;
+			W = 1 / nmus;
 		end
 		if model.reducedW && (i>5) && (i<9)
 			W = W*0.01;
@@ -523,13 +495,21 @@ function [f, g, c, J] = evaluate(model, X)
 			% fatigue-like effort calculation
 			meanact = mean(X(iu));
 			f2 = f2 + W * meanact^expon;
-			g(iu) = g(iu) + expon * W * meanact^(expon-1) / N;
+			g2(iu) = g2(iu) + expon * W * meanact^(expon-1) / N;
 		else
 			% simple mean of activation^expon over all muscles and nodes
 			f2 = f2 + W * mean(X(iu).^expon);
-			g(iu) = g(iu) + expon * W * X(iu).^(expon-1) / N;
+			g2(iu) = g2(iu) + expon * W * X(iu).^(expon-1) / N;
 		end
-	end
+    end
+
+    % apply s
+    f2 = f2^s;
+    g2 = s*f2^(s-1)*g2;
+    
+    % apply weighting to the tracking term
+	f2 = f2*model.Weffort;
+	g2 = g2*model.Weffort;
 
 	% cost of valve operation (mean of squared valve speed)
 	iu1 = nstates + nmus + (1:2);		% valve controls in node 1
@@ -542,16 +522,81 @@ function [f, g, c, J] = evaluate(model, X)
 		end
 		v = (X(iu2) - X(iu1))/h;
 		f3 = f3 + sum(v.^2)/(2*N);
-		g(iu1) = g(iu1) - model.Wvalve * v/h/N; 
-		g(iu2) = g(iu2) + model.Wvalve * v/h/N; 
-		g(end) = g(end) - model.Wvalve * sum(v.^2)/N^2/h;
+		g3(iu1) = g3(iu1) - model.Wvalve * v/h/N; 
+		g3(iu2) = g3(iu2) + model.Wvalve * v/h/N; 
+		g3(end) = g3(end) - model.Wvalve * sum(v.^2)/N^2/h;
 		iu1 = iu1 + nvarpernode;
-	end
-	f3 = model.Wvalve*f3;
+    end
+	
+    % apply s
+    f3 = f3^s;
+    g3 = s*f3^(s-1)*g3;
+    
+    % apply weighting to the tracking term
+	f3 = f3*model.Wvalve;
+	g3 = g3*model.Wvalve;
 
+    % Cost for moment symmetry
+    % tracking term for kinematics and GRF
+	ixg = 1:nxg;				% index to musculoskeletal states in node 1
+	f4 = 0;
+    simdata = zeros(4,60);
+    dMdx = [];
+    for i=1:N
+        x = X(ixg);
+		[simdata(:,i), dMdxi] = jointmoments_kneehip(x, model);
+        dMdx = [dMdx;dMdxi];
+		ixg = ixg + nvarpernode;								% move pointers to next node
+    end
+    
+    if model.kneeconstraint == 1
+        ixg = 1:nxg;
+        for i=1:N     
+            if i <= N/2
+                res = simdata(2,i)-simdata(4,i+N/2);
+                f4 = f4 + 0.01*res^2/(2*N);
+                g4(ixg) = g4(ixg) + 0.01*model.Wmom*2*(res*dMdx(4*i-2,:))'/(2*N);	% gradient of moment
+                g4(ixg+N/2*nvarpernode) = g4(ixg+N/2*nvarpernode) - 0.01*model.Wmom*2*(res*dMdx(4*(i+N/2),:))'/(2*N);	% gradient of moment
+            else
+                res = simdata(2,i)-simdata(4,i-N/2);
+                f4 = f4 + 0.01*res^2/(2*N);
+                g4(ixg) = g4(ixg) + 0.01*model.Wmom*2*(res*dMdx(4*i-2,:))'/(2*N);	% gradient of moment
+                g4(ixg-N/2*nvarpernode) = g4(ixg-N/2*nvarpernode) - 0.01*model.Wmom*2*(res* dMdx(4*(i-N/2),:))'/(2*N);	% gradient of moment
+            end
+            ixg = ixg + nvarpernode;
+        end
+    end
+    
+    if model.hipconstraint == 1
+        ixg = 1:nxg;
+        for i=1:N     
+            if i <= N/2
+                res = simdata(1,i)-simdata(3,i+N/2);
+                f4 = f4 + 0.01*res^2/(2*N);
+                g4(ixg) = g4(ixg) + 0.01*model.Wmom*2*(res*dMdx(4*i-3,:))'/(2*N);	% gradient of moment
+                g4(ixg+N/2*nvarpernode) = g4(ixg+N/2*nvarpernode) - 0.01*model.Wmom*2*(res*dMdx(4*(i+N/2)-1,:))'/(2*N);	% gradient of moment
+            else
+                res = simdata(1,i)-simdata(3,i-N/2);
+                f4 = f4 + 0.01*res^2/(2*N);
+                g4(ixg) = g4(ixg) + 0.01*model.Wmom*2*(res*dMdx(4*i-3,:))'/(2*N);	% gradient of moment
+                g4(ixg-N/2*nvarpernode) = g4(ixg-N/2*nvarpernode) - 0.01*model.Wmom*2*(res* dMdx(4*(i-N/2)-1,:))'/(2*N);	% gradient of moment
+            end
+            ixg = ixg + nvarpernode;
+        end
+    end
+    
+    % apply s
+    f4 = f4^s;
+    g4 = s*f4^(s-1)*g4;
+    
+    % apply weighting to the moment symmetry term
+	f4 = f4*model.Wmom;
+	g4 = g4*model.Wmom;
+	
 	% add up the cost function components and store them all in a row
-	f = f1 + f2 + f3;
-	f = [f f1 f2 f3];
+	f = f1 + f2 + f3 + f4;
+    g = g1 + g2 + g3 + g4;
+	f = [f f1 f2 f3 f4];
 	
 	%-----------------------------------------------------------------------------
 	% constraint violations c and their jacobian J
@@ -563,33 +608,6 @@ function [f, g, c, J] = evaluate(model, X)
 	iu1 = nstates+(1:ncontrols);
 	% pointers to constraints for node 1
 	ic = 1:nstates;
-    
-    if model.kneeconstraint == 1
-        ixu1 = 1:nstates;
-        Mk = zeros(N,2);
-        dMdxk = [];
-        for i = 1:N
-            xu = X(ixu1);
-            % Constraint on knee moments
-            [Mk(i,:),dMdxki] = jointmoments_knee(xu, model);
-            dMdxk = [dMdxk;dMdxki];
-            ixu1 = ixu1 + nvarpernode;
-        end
-    end
-    
-    if model.hipconstraint == 1
-        ixu1 = 1:nstates;
-        Mh = zeros(N,2);
-        dMdxh = [];
-        for i = 1:N
-            xu = X(ixu1);
-            % Constraint on hip moments
-            [Mh(i,:),dMdxhi] = jointmoments_hip(xu, model);
-            dMdxh = [dMdxh;dMdxhi];
-            ixu1 = ixu1 + nvarpernode;
-        end
-    end
-
 	% evaluate dynamics at each pair of successive nodes
 	for i=1:N
 		if (i < N)
@@ -606,8 +624,7 @@ function [f, g, c, J] = evaluate(model, X)
 		end
 		u1 = X(iu1);
 		u2 = X(iu2);
-        
-        	
+		
 		% evaluate dynamics violation, and derivatives
 		if (discr==1)						% midpoint
 			[c(ic), dfdx, dfdxdot, dfdu] = dyn(model,(x1+x2)/2,(x2-x1)/h,(u1+u2)/2);	%easydyn((x1+x2)/2,(x2-x1)/h);%
@@ -631,49 +648,15 @@ function [f, g, c, J] = evaluate(model, X)
 		% add df/dxdot * dxdot/dx2 * dx2/ddur
 		if (i==N)
 			J(ic,end) = J(ic,end) + dfdxdot(:,1) / h * speed;
-        end
+		end
 				
-        % Moment constraint: knee and/or hip moment should be equal to the
-        % joint moment in the other leg with N/2 phase difference
-        if model.kneeconstraint == 1;
-            if i <= N/2
-                c(end-2*N+i) = Mk(i,1)-Mk(i+N/2,2);
-                J(end-2*N+i,ix1) = -dMdxk(2*i-1,:);
-                J(end-2*N+i,ix1+N/2*nvarpernode) = dMdxk(2*(i+N/2),:);
-            else
-                c(end-2*N+i) = Mk(i,1)-Mk(i-N/2,2);
-                J(end-2*N+i,ix1) = -dMdxk(2*i-1,:);
-                J(end-2*N+i,ix1-N/2*nvarpernode) = dMdxk(2*(i-N/2),:);
-            end
-        end
-        if or(model.kneeconstraint < 0, model.kneeconstraint > 1)
-            error('Invalid knee constraint')
-        end
-        
-        if model.hipconstraint == 1;
-            if i <= N/2
-                c(end-N+i) = Mh(i,1)-Mh(i+N/2,2);
-                J(end-N+i,ix1) = -dMdxh(2*i-1,:);
-                J(end-N+i,ix1+N/2*nvarpernode) = dMdxh(2*(i+N/2),:);
-            else
-                c(end-N+i) = Mh(i,1)-Mh(i-N/2,2);
-                J(end-N+i,ix1) = -dMdxh(2*i-1,:);
-                J(end-N+i,ix1-N/2*nvarpernode) = dMdxh(2*(i-N/2),:);
-            end
-        end
-        if or(model.hipconstraint < 0, model.hipconstraint > 1)
-            error('Invalid hip constraint')
-        end
-        
 		% advance the indices
 		ix1 = ix1 + nvarpernode;
 		iu1 = iu1 + nvarpernode;
 		ic = ic + nstates;		% there are nstates constraints for each node
-    end    
-    
+	end
 	c = problem.Wc * c;
 	J = problem.Wc * J;
-	
 end
 %=====================================================
 function evaluate_if_needed(X)
@@ -693,7 +676,7 @@ function evaluate_if_needed(X)
 		optim.X = X;
 
 		% log the results of this evaluation
-		normc = norm(optim.c(1:end-2*problem.N));
+		normc = norm(optim.c);
 		row = [normc optim.f];
 		row(find(row==0)) = NaN;
 		problem.log = [problem.log ; row];
@@ -702,10 +685,10 @@ function evaluate_if_needed(X)
 		if problem.print == 0
 			return
 		end
-		if or(problem.print == 2,toc > problem.Printinterval)
+		if problem.print == 2 || toc > problem.Printinterval
 			report(X);
 			fprintf('%d -- Normc: %8.6f  ', size(problem.log,1), normc);
-			fprintf('Obj: %8.5f = %8.5f (track) + %8.5f (effort) + %8.5f (valves)\n', optim.f);
+			fprintf('Obj: %8.5f = %8.5f (track) + %8.5f (effort) + %8.5f (valves)\n + %8.5f (moments) \n', optim.f);
 			savefile(X, 'tmpsave.mat');
 			tic;
 		end
@@ -731,7 +714,7 @@ function c = confun_2d(X)
 	c = optim.c;
 end
 %=====================================================
-function J = conjac_2d(X);
+function J = conjac_2d(X)
 
 	global optim 
 	
@@ -739,7 +722,7 @@ function J = conjac_2d(X);
 	J = optim.J;
 end
 %=====================================================
-function J = conjacstructure_2d;
+function J = conjacstructure_2d
 
 	global problem 
 	
@@ -747,7 +730,7 @@ function J = conjacstructure_2d;
 	J = problem.Jpattern;
 end
 %=====================================================
-function f = objfun_2d(X);
+function f = objfun_2d(X)
 
 	global optim 
 	
@@ -755,7 +738,7 @@ function f = objfun_2d(X);
 	f = optim.f(1);
 end
 %=====================================================
-function g = objgrad_2d(X);
+function g = objgrad_2d(X)
 
 	global optim 
 	
@@ -777,11 +760,11 @@ function savefile(X, filename, result_input)
 	result.speed = problem.model.data.speed;
 	result.model = problem.model;
 	result.normc = problem.log(end,1);
-	result.f = problem.log(end,2:5);
+	result.f = problem.log(end,2:6);
 	save(filename,'result');
 end
 %===========================================================================================
-function [outdata] = makeperiodic(indata, terms);
+function [outdata] = makeperiodic(indata, terms)
 	% makes movement data periodic by fitting a truncated Fourier series
 	% data format: rows represent time, columns represent different variables
 
@@ -794,7 +777,7 @@ function [outdata] = makeperiodic(indata, terms);
 	outdata = ifft(spectrum);
 end
 %===========================================================================================
-function drawstick(x);
+function drawstick(x)
 
 	R = [1:6 4];			% right stick points
 	L = [2 7:10 8];			% left stick points
@@ -845,7 +828,7 @@ function report(X)
 
 end
 %==============================================================================================
-function matcompare(a,b);
+function matcompare(a,b)
 	% compares two matrices and prints element that has greatest difference
 	[maxerr,irow] = max(abs(a-b));
 	[maxerr,icol] = max(maxerr);

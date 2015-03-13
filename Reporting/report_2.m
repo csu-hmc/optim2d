@@ -1,4 +1,4 @@
-function report(resultfile)
+function report_2(resultfile)
 	% make report for R3FAS 2D model results
 
 	global linecolors
@@ -81,13 +81,13 @@ function report(resultfile)
 	sdgrf = [sd(:,[4 5]) ; sd(:,[9 10])];
 
 	% create Figure window
-	close all				% closes all existing Figure windows
-	figure(	'NumberTitle', 		'off',	...
-			'Name',				['Report of: ' path resultfile], ...
-			'PaperOrientation',	'landscape', ...
-			'PaperPosition',	[0 0 10 8.5], ...		% fill the page
-			'OuterPosition',	[1 1 1024 1024]);
-	linecolors = ['b' 'r'];
+% 	close all				% closes all existing Figure windows
+% 	figure(	'NumberTitle', 		'off',	...
+% 			'Name',				['Report of: ' path resultfile], ...
+% 			'PaperOrientation',	'landscape', ...
+% 			'PaperPosition',	[0 0 10 8.5], ...		% fill the page
+% 			'OuterPosition',	[1 1 1024 1024]);
+	linecolors = ['k' 'm'];
 
 	% Optimization Information
 	subplot(6,4,1)
@@ -110,27 +110,27 @@ function report(resultfile)
 
 	% Horizontal GRF
 	subplot(6,4,5)
-	plotvar(simgrf(:,1), symm, avgrf(:,1), sdgrf(:,1));
+	plotvar(simgrf(:,1), symm);
 	ylabel('Force [BW]', 'Fontsize',8');
 	title('Horizontal GRF');
 
 	% Vertical Ground reaction force
 	subplot(6,4,9)
-	plotvar(simgrf(:,2), symm, avgrf(:,2), sdgrf(:,2));
+	plotvar(simgrf(:,2), symm);
 	ylabel('Force [BW]', 'Fontsize',8');
 	title('Vertical GRF');
 	
 	% Plot joint angles
 	subplot(6,4,2)
-	plotvar(simang(:,1), symm, avang(:,1), sdang(:,1));
+	plotvar(simang(:,1), symm);
 	ylabel('Angle [deg]', 'Fontsize',8')
 	title('Hip angle');
 	subplot(6,4,3)
-	plotvar(-simang(:,2), symm, -avang(:,2), sdang(:,2));
+	plotvar(-simang(:,2), symm);
 	ylabel('Angle [deg]', 'Fontsize',8')
 	title('Knee angle');
 	subplot(6,4,4)
-	plotvar(simang(:,3), symm, avang(:,3), sdang(:,3));
+	plotvar(simang(:,3), symm);
 	ylabel('Angle [deg]', 'Fontsize',8')
 	title('Ankle angle');
 

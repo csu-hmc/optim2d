@@ -9,9 +9,9 @@ function model = initmodel(model);
 	
 	% if requested, amputate the model
 	if strcmp(model.type, 'bka')
-		model.gait2d('Set','Right BKA', model.anklestiffness);		
+		model.gait2d('Set','Right BKA', model.anklestiffness, model.ankledamping);		
 	elseif strcmp(model.type, 'aka')
-		model.gait2d('Set','Right AKA', model.anklestiffness);	
+		model.gait2d('Set','Right AKA', model.anklestiffness, model.ankledamping);	
 	end
 	
 	% ask what the mass is, and store it

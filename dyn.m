@@ -55,12 +55,21 @@ function [f,dfdx,dfdxdot,dfdu] = dyn(model,x,xdot,u)
 		dfdx = speye(nx);
 	else
 		% first evaluate the musculoskeletal part of the model
-		M = [0 x(iM) 0 0 0 0]';			% apply the right knee moment from the prosthesis
+		if strcmp(model.type, 'AFO')
+            % Add stiffness to ankle
+            M = [0 x(iM) (-x(6)*model.anklestiffness-x(15)*model.ankledamping) 0 0 0]';			% apply the right knee moment from the prosthesis
+%             dMdx6 = [0 0 (x(6)<0)*(-model.anklestiffness) 0 0 0]; (x(6)<0)*
+%             dMdx15 = [0 0 (x(6)<0)*(-model.ankledamping) 0 0 0];
+        else
+            M = [0 x(iM) 0 0 0 0]';			% apply the right knee moment from the prosthesis
+        end
 		[f(ixg), dfdx(ixg,ixg), dfdxdot(ixg,ixg), dfdu(ixg,iug), dfdM] = model.gait2d('Dynamics',x(1:nxg),xdot(1:nxg),u(1:nug),M);
 		dfdx(ixg,iM) = dfdM(:,2);
+%         dfdx(ixg,6) = dfdM*dMdx6';
+%         dfdx(ixg,15) = dfdM*dMdx15';
 	
 		% if there is no prosthetic knee in the model, use simple equations for the prosthetic variables
-		if strcmp(model.type, 'able') || strcmp(model.type, 'bka')
+		if strcmp(model.type, 'able') || strcmp(model.type, 'bka') || strcmp(model.type, 'AFO')
 			% s = 0
 			f(nxg+1) = x(is);
 			dfdx(nxg+1,is) = 1;

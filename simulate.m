@@ -6,8 +6,8 @@ function simulate(duration,resultfile)
 
 	% Load the file with simulation result
 	if (nargin == 1)
-		[file,path] = uigetfile('*.mat');
-		resultfile = [path file];
+		[file,parentfolder] = uigetfile('*.mat');
+		resultfile = [parentfolder file];
 	end
 	result = load(resultfile);
 	result = result.result;
@@ -55,7 +55,7 @@ function simulate(duration,resultfile)
 	result.f = NaN;
 	result.solver = 'simulate';
 	result.message = 'Forward simulation';
-	outputfile = [path 'sim_' file];
+	outputfile = [parentfolder 'sim_' file];
 	save(outputfile, 'result');
 	fprintf('Result was saved on file:\n%s\n', outputfile);
 	

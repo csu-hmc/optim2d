@@ -37,7 +37,7 @@ function anim(resultfile);
 	
 	% initialize movie file
 	moviefile = strrep(resultfile,'.mat','.avi');
-	avi = avifile(moviefile, 'fps', 30, 'compression', 'Cinepak','quality',95);
+	avi = avifile(moviefile, 'fps', 30, 'compression', 'xvid','quality',95);
 
 	% initialize figure window
 	close all

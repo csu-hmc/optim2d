@@ -26,12 +26,6 @@ function [result] = optim(prob);
 	nvarpernode = nstates + ncontrols;		% number of unknowns per time node
 	nvar = nvarpernode * N + 1;				% total number of unknowns (states, controls, duration)
 	ncon = nstates * N;						% number of constraints due to discretized dynamics and task
-    if problem.model.kneeconstraint == 1
-        ncon = ncon + N;
-    end
-    if problem.model.hipconstraint == 1
-        ncon = ncon+N;
-    end
 
 	problem.ndof = ndof;
 	problem.nmus = nmus;
@@ -263,8 +257,8 @@ function [result] = optim(prob);
 			funcs.jacobianstructure = @conjacstructure_2d;
 			options.lb = L;
 			options.ub = U;
-			options.cl = [zeros(ncon,1)];
-			options.cu = [zeros(ncon,1)];
+			options.cl = zeros(ncon,1);
+			options.cu = zeros(ncon,1);	
 			options.ipopt.max_iter = problem.MaxIterations;
 			options.ipopt.hessian_approximation = 'limited-memory';
 			options.ipopt.limited_memory_max_history = 12;	% 6 is default, 12 converges better, but may cause "insufficient memory" error when N is large
@@ -296,12 +290,7 @@ function [result] = optim(prob);
 %             end
             FL = [-inf;zeros(problem.ncon,1)];
             FU = [inf;zeros(problem.ncon,1)];
-            xmul = zeros(size(L));
-            Fmul = zeros(size(FL));
-            xstate = 2*ones(size(X0));
-            Fstate = 2*ones(size(FL));
-            [X,F,INFO] = snopt(X0,L,U,xmul, xstate,FL,FU,Fmul, Fstate, 'objconfun');
-%             [X,F,INFO] = snopt(X0,L,U,FL,FU, 'objconfun');
+            [X,F,INFO] = snopt(X0,L,U,FL,FU, 'objconfun');
             snprint    off;
             snsummary off;
             result.info = INFO;
@@ -313,25 +302,6 @@ function [result] = optim(prob);
             else
                 result.message = 'Check INFO'
             end
-        elseif strcmp(problem.Solver,'TOMLAB')
-            Prob = conAssign(@objfun_2d, @objgrad_2d, [], [], L, U, 'optim2d', X0, ...
-                            [], 0, ...
-                            [], [], [], @confun_2d, @conjac_2d, [], problem.Jpattern, ...
-							zeros(ncon,1), zeros(ncon,1), ...
-                            [], [], [],[]);
-			% Prob.SOL.optPar(1)= 1;			% uncomment this to get snoptsum.txt and snoptpri.txt
-			Prob.SOL.optPar(9) = problem.ConstraintTol;		% feasibility tolerance
-			Prob.SOL.optPar(10) = problem.Tol;				% optimality tolerance
-			Prob.SOL.optPar(11) = 1e-6; % Minor feasibility tolerance (1e-6)
-			Prob.SOL.optPar(30) = 1000000; % maximal sum of minor iterations (max(10000,20*m))
-			Prob.SOL.optPar(35) = problem.MaxIterations;
-			Prob.SOL.optPar(36) = 40000; % maximal number of minor iterations in the solution of the QP problem (500)
-			Prob.SOL.moremem = 10000000; % increase internal memory
-%             Prob.PriLevOpt = 2; % Print every 10 major iterations
-			Result = tomRun('snopt',Prob);
-			X = Result.x_k;
-			result.message = Result.ExitText;
-			result.info = Result.ExitFlag;              
 		else
 			error('Solver name not recognized: %s', problem.Solver);
 		end
@@ -563,33 +533,6 @@ function [f, g, c, J] = evaluate(model, X)
 	iu1 = nstates+(1:ncontrols);
 	% pointers to constraints for node 1
 	ic = 1:nstates;
-    
-    if model.kneeconstraint == 1
-        ixu1 = 1:nstates;
-        Mk = zeros(N,2);
-        dMdxk = [];
-        for i = 1:N
-            xu = X(ixu1);
-            % Constraint on knee moments
-            [Mk(i,:),dMdxki] = jointmoments_knee(xu, model);
-            dMdxk = [dMdxk;dMdxki];
-            ixu1 = ixu1 + nvarpernode;
-        end
-    end
-    
-    if model.hipconstraint == 1
-        ixu1 = 1:nstates;
-        Mh = zeros(N,2);
-        dMdxh = [];
-        for i = 1:N
-            xu = X(ixu1);
-            % Constraint on hip moments
-            [Mh(i,:),dMdxhi] = jointmoments_hip(xu, model);
-            dMdxh = [dMdxh;dMdxhi];
-            ixu1 = ixu1 + nvarpernode;
-        end
-    end
-
 	% evaluate dynamics at each pair of successive nodes
 	for i=1:N
 		if (i < N)
@@ -606,8 +549,7 @@ function [f, g, c, J] = evaluate(model, X)
 		end
 		u1 = X(iu1);
 		u2 = X(iu2);
-        
-        	
+		
 		% evaluate dynamics violation, and derivatives
 		if (discr==1)						% midpoint
 			[c(ic), dfdx, dfdxdot, dfdu] = dyn(model,(x1+x2)/2,(x2-x1)/h,(u1+u2)/2);	%easydyn((x1+x2)/2,(x2-x1)/h);%
@@ -631,46 +573,13 @@ function [f, g, c, J] = evaluate(model, X)
 		% add df/dxdot * dxdot/dx2 * dx2/ddur
 		if (i==N)
 			J(ic,end) = J(ic,end) + dfdxdot(:,1) / h * speed;
-        end
+		end
 				
-        % Moment constraint: knee and/or hip moment should be equal to the
-        % joint moment in the other leg with N/2 phase difference
-        if model.kneeconstraint == 1;
-            if i <= N/2
-                c(end-2*N+i) = Mk(i,1)-Mk(i+N/2,2);
-                J(end-2*N+i,ix1) = -dMdxk(2*i-1,:);
-                J(end-2*N+i,ix1+N/2*nvarpernode) = dMdxk(2*(i+N/2),:);
-            else
-                c(end-2*N+i) = Mk(i,1)-Mk(i-N/2,2);
-                J(end-2*N+i,ix1) = -dMdxk(2*i-1,:);
-                J(end-2*N+i,ix1-N/2*nvarpernode) = dMdxk(2*(i-N/2),:);
-            end
-        end
-        if or(model.kneeconstraint < 0, model.kneeconstraint > 1)
-            error('Invalid knee constraint')
-        end
-        
-        if model.hipconstraint == 1;
-            if i <= N/2
-                c(end-N+i) = Mh(i,1)-Mh(i+N/2,2);
-                J(end-N+i,ix1) = -dMdxh(2*i-1,:);
-                J(end-N+i,ix1+N/2*nvarpernode) = dMdxh(2*(i+N/2),:);
-            else
-                c(end-N+i) = Mh(i,1)-Mh(i-N/2,2);
-                J(end-N+i,ix1) = -dMdxh(2*i-1,:);
-                J(end-N+i,ix1-N/2*nvarpernode) = dMdxh(2*(i-N/2),:);
-            end
-        end
-        if or(model.hipconstraint < 0, model.hipconstraint > 1)
-            error('Invalid hip constraint')
-        end
-        
 		% advance the indices
 		ix1 = ix1 + nvarpernode;
 		iu1 = iu1 + nvarpernode;
 		ic = ic + nstates;		% there are nstates constraints for each node
-    end    
-    
+	end
 	c = problem.Wc * c;
 	J = problem.Wc * J;
 	
@@ -693,7 +602,7 @@ function evaluate_if_needed(X)
 		optim.X = X;
 
 		% log the results of this evaluation
-		normc = norm(optim.c(1:end-2*problem.N));
+		normc = norm(optim.c);
 		row = [normc optim.f];
 		row(find(row==0)) = NaN;
 		problem.log = [problem.log ; row];
@@ -702,7 +611,7 @@ function evaluate_if_needed(X)
 		if problem.print == 0
 			return
 		end
-		if or(problem.print == 2,toc > problem.Printinterval)
+		if problem.print == 2 || toc > problem.Printinterval
 			report(X);
 			fprintf('%d -- Normc: %8.6f  ', size(problem.log,1), normc);
 			fprintf('Obj: %8.5f = %8.5f (track) + %8.5f (effort) + %8.5f (valves)\n', optim.f);
