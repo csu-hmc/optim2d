@@ -34,12 +34,12 @@ for i = 1:N
     R_JRF(1:2,i) = -Fresankle-Fmusankle;
 
     Fresknee = -R_JRF(1:2,i) -[0; LinkMass(end-1)*g];
-    Fmusknee = sum(muscleforces(3:5,1))*[cos(OR_tibr);sin(OR_tibr)]-sum(muscleforces(7:8,1))*[cos(OR_tibr);sin(OR_tibr)];
+    Fmusknee = sum(muscleforces(3:5,1))*[cos(OR_femr);sin(OR_femr)]-sum(muscleforces(7:8,1))*[cos(OR_tibr);sin(OR_tibr)];
 
     R_JRF(3:4,i) = -Fresknee-Fmusknee;
 
     Freship = -R_JRF(3:4,i) - [0;LinkMass(end-2)*g];
-    Fmuship = sum(muscleforces(1:2,1))*[cos(OR_femr);sin(OR_femr)]-sum(muscleforces([3,5,6],1))*[cos(OR_femr);sin(OR_femr)];
+    Fmuship = sum(muscleforces(1:2,1))*[cos(OR_femr);sin(OR_femr)]-sum(muscleforces([3,5],1))*[cos(OR_femr);sin(OR_femr)]-sum(muscleforces(6,1))*[cos(OR_tibr);sin(OR_tibr)];
 
     R_JRF(5:6,i) = -Freship-Fmuship;
     
@@ -50,12 +50,13 @@ for i = 1:N
     L_JRF(1:2,i) = -Fresankle-Fmusankle;
 
     Fresknee = -L_JRF(1:2,i) -[0; LinkMass(end-1)*g];
-    Fmusknee = sum(muscleforces(3:5,2))*[cos(OR_tibl);sin(OR_tibl)]-sum(muscleforces(7:8,2))*[cos(OR_tibl);sin(OR_tibl)];
+    Fmusknee = sum(muscleforces(3:5,2))*[cos(OR_feml);sin(OR_feml)]-sum(muscleforces(7:8,2))*[cos(OR_tibl);sin(OR_tibl)];
 
     L_JRF(3:4,i) = -Fresknee-Fmusknee;
 
     Freship = -L_JRF(3:4,i) - [0;LinkMass(end-2)*g];
-    Fmuship = sum(muscleforces(1:2,2))*[cos(OR_feml);sin(OR_feml)]-sum(muscleforces([3,5,6],2))*[cos(OR_feml);sin(OR_feml)];
+    Fmuship = sum(muscleforces(1:2,2))*[cos(OR_feml);sin(OR_feml)]-sum(muscleforces([3,5],2))*[cos(OR_feml);sin(OR_feml)]-sum(muscleforces(6,2))*[cos(OR_tibl);sin(OR_tibl)];
 
     L_JRF(5:6,i) = -Freship-Fmuship;
 end
+L_JRF;

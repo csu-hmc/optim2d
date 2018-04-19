@@ -1,7 +1,7 @@
 % script for running the optim.m program
-% clear all
+clear all
 
-% tic
+tic
 % define which movement we are working on
 movement = 'Winter/Winter_normal';
 
@@ -10,7 +10,7 @@ problem.Solver = 'IPOPT';
 problem.MaxIterations = 5000;
 problem.ConstraintTol = .01;
 problem.Tol = .0001;
-problem.symmetry = 1;
+problem.symmetry = 0;
 problem.discretization = 'BE';		% start with backward Euler
 problem.checkderivatives = 0;		% set this to 1 to make optim.m check derivatives
 problem.debug = 0;                  % only used in debug mode
@@ -39,62 +39,62 @@ standmodel.speed = 0;
 standmodel.Wtrack = 1e-8;
 
 movement = 'Winter/Winter_normal';
-% optimize for standing
-problem.N = 2;
-problem.model = standmodel;
-problem.initialguess = 'mid';
-problem.resultfile		= [movement '_result_stand_2.mat'];
-result = optim(problem);
-
-% optimize for standing
-problem.N = 30;
-problem.model = standmodel;
-problem.initialguess = 'Winter/Winter_normal_result_stand_2';
-problem.resultfile		= [movement '_result_stand_30.mat'];
-result = optim(problem);
-
-% optimize for standing
-problem.N = 60;
-problem.model = standmodel;
-problem.initialguess = 'Winter/Winter_normal_result_stand_30';
-problem.resultfile		= [movement '_result_stand.mat'];
-result = optim(problem);
-
-% define model used for slowest walking
-slowestmodel = ablemodel;
-slowestmodel.speed = 0.2;
-slowestmodel.Wtrack = 0.05;
-
-% optimize for slow walking
+% % optimize for standing
+% problem.N = 2;
+% problem.model = standmodel;
+% problem.initialguess = 'mid';
+% problem.resultfile		= [movement '_result_stand_2.mat'];
+% result = optim(problem);
+% 
+% % optimize for standing
+% problem.N = 30;
+% problem.model = standmodel;
+% problem.initialguess = 'Winter/Winter_normal_result_stand_2';
+% problem.resultfile		= [movement '_result_stand_30.mat'];
+% result = optim(problem);
+% 
+% % optimize for standing
 % problem.N = 60;
-problem.model = slowestmodel;
-problem.initialguess = 'Winter/Winter_normal_result_stand.mat';  % 'mid';%
-problem.resultfile		= [movement '_result_slowest.mat'];
-result = optim(problem);
-% disp('Hit ENTER to continue with next optimization, or CTRL-C to quit');
-% pause;
-
-% define model used for slow walking
-slowmodel = ablemodel;
-slowmodel.speed = 0.5;
-slowmodel.Wtrack = 0.1;
-
-% optimize for slow walking
-% problem.N = 60;
-problem.model = slowmodel;
-problem.initialguess = 'Winter/Winter_normal_result_slowest.mat';  % 'mid';%
-problem.resultfile		= [movement '_result_slow.mat'];
-result = optim(problem);
-% disp('Hit ENTER to continue with next optimization, or CTRL-C to quit');
-% pause;
-
+% problem.model = standmodel;
+% problem.initialguess = 'Winter/Winter_normal_result_stand_30';
+% problem.resultfile		= [movement '_result_stand.mat'];
+% result = optim(problem);
+% 
+% % define model used for slowest walking
+% slowestmodel = ablemodel;
+% slowestmodel.speed = 0.2;
+% slowestmodel.Wtrack = 0.05;
+% 
+% % optimize for slow walking
+% % problem.N = 60;
+% problem.model = slowestmodel;
+% problem.initialguess = 'Winter/Winter_normal_result_stand.mat';  % 'mid';%
+% problem.resultfile		= [movement '_result_slowest.mat'];
+% result = optim(problem);
+% % disp('Hit ENTER to continue with next optimization, or CTRL-C to quit');
+% % pause;
+% 
+% % define model used for slow walking
+% slowmodel = ablemodel;
+% slowmodel.speed = 0.5;
+% slowmodel.Wtrack = 0.1;
+% 
+% % optimize for slow walking
+% % problem.N = 60;
+% problem.model = slowmodel;
+% problem.initialguess = 'Winter/Winter_normal_result_slowest.mat';  % 'mid';%
+% problem.resultfile		= [movement '_result_slow.mat'];
+% result = optim(problem);
+% % disp('Hit ENTER to continue with next optimization, or CTRL-C to quit');
+% % pause;
+% 
 % Find result for walking
 problem.model = ablemodel;
 problem.initialguess = 'Winter/Winter_normal_result_slow.mat';
-problem.resultfile      = [movement '_result_able.mat'];
+problem.resultfile      = [movement '_result_test_able1.mat'];
 optim(problem)
 % disp('Hit ENTER to continue with next optimization, or CTRL-C to quit');
 % pause;
  
 disp('All optimizations completed.')
-
+toc

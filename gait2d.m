@@ -87,13 +87,20 @@ function [moments] = gait2d('Jointmoments', x)
 function [par] = gait2d('Get',name);
 % To extract values of model parameters.
 % The following "name" arguments are presently available, and produce these outputs
-% 	'Lceopt' 			16 x 1 vector (m), optimal contractile element (CE) length
+%   'Lceopt' 			16 x 1 vector (m), optimal contractile element (CE) length
+%   'Fmax'              16 x 1 vector (N), maximum muscle force
 %   'Total Mass'		scalar (kg), total body mass of the model
+%   'FT'                16 x 1 vector (%/100) returns the percentage of fast-twitch
+%   'Ahill'             16 x 1 vector with relative Hill constant
+%   'Gmax'              16 x 1 vector with maximum eccentric muscle
+%   'PEEslack'          16 x 1 vector with PEE slack lengths
+%   'kPEE'              16 x 1 vector with stiffness parameter of
 
 function gait2d('Set',name,par);
 % To set values of model parameters
 % The following "name,par" arguments are presently available
 % 	'Extra Mass' 		1x4 vector: segment, mass, X, Y
 %						Segment 0 adds mass to trunk, 1 adds the mass to each thigh, 2 is shanks, 3 feet
-
+%   'Right BKA'         1x1 vector: stiffness of ankle
+%   'Right AKA'         1x1 vector: stiffness of ankle
 
