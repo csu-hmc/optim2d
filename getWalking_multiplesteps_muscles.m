@@ -30,7 +30,7 @@ ablemodel.type 				= 'able';
 ablemodel.datafile			= movement;
 ablemodel.Wtrack 	= 0;	% weight of tracking term in optimization objective
 ablemodel.Weffort 	= 10;	% weight of muscle effort term in optimization objective
-ablemodel.Wreg = 10;       % weight of the regularization term in optimization objective
+ablemodel.Wreg = 1;       % weight of the regularization term in optimization objective
 ablemodel.effort.fatigue 	= 0;
 ablemodel.effort.Fmaxweighted = 0;
 ablemodel.effort.exponent	= 2;
@@ -40,12 +40,23 @@ ablemodel.reducedW = 0;
 
 % Starts with walking model that is found using
 % getWalking_IPOPT_deterministic
+problem.obj = 'metcost';
+problem.epsilon = 10^-2;
+problem.initialguess = 'Winter/Winter_normal_result_stand.mat'; %'Winter/Winter_normal_result_able.mat';%'mid';% 
+problem.resultfile = 'Winter/Winter_normal_result_metcost.mat';
+problem.model = ablemodel;
+if exist(problem.resultfile, 'file')
+    disp('Problem already solved')
+else
+    optim(problem);
+end
 
+keyboard;
 Ncycles = 10;
 stdev = [0.1 1 10 20];
 % stdev = [0.1 0.5 1 5 10 20];% 110 120 130 140 150 160 170 180 190 200 210 220 230 240 250 260 270 280 290 300];
 
-iniguess = 'Winter/Winter_normal_result_able_notracking';%
+iniguess = problem.resultfile;
 %Multiple steps without tta
 for k = 1:length(Ncycles)
     for j = 1:1
@@ -62,7 +73,7 @@ for k = 1:length(Ncycles)
             disp('Starting optimal control solution process for able model...');
             problem.model 			= ablemodel;
             problem.initialguess 	= problem.resultfile; % 'Winter/Winter_normal_result_torque_1cycle.mat'; %'Winter/Winter_normal_result_able.mat';%'mid';%
-            problem.resultfile 		= [movement '_effort_notrack_able_fromoldsol_' num2str(problem.Ncycles) 'cycles_std' num2str(stdev(i)) '_time' num2str(j) '.mat'];
+            problem.resultfile 		= [movement '_metcost_fromstand_able_' num2str(problem.Ncycles) 'cycles_std' num2str(stdev(i)) '_time' num2str(j) '.mat'];
             if exist(problem.resultfile, 'file')
                 disp('Problem already solved')
                 load(problem.resultfile)
